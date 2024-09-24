@@ -1,0 +1,152 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def load_data_from_sheets(file_path):
+    """Carrega dados de todas as abas do arquivo Excel."""
+    try:
+        xls = pd.ExcelFile(file_path)
+        data = []
+
+        for sheet in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet)
+            print(f"Lendo aba: {sheet}")
+
+            # Verifica se as colunas estão corretas
+            if not all(col in df.columns for col in ['Nome', 'Data', 'Valor']):
+                print(f"Aba {sheet} não possui as colunas necessárias.")
+                continue
+
+            df['Mês'] = sheet  # Adiciona uma coluna para o mês
+            
+            # Converte a coluna 'Valor' para numérico e trata campos vazios
+            df['Valor'] = pd.to_numeric(df['Valor'].astype(str).str.replace(',', '.'), errors='coerce')
+            df['Valor'] = df['Valor'].fillna(0)  # Substitui valores NaN por 0
+
+            # Adiciona coluna de status, preenchendo com 'PENDENTE' se estiver vazia
+            if 'Status' not in df.columns:
+                df['Status'] = 'PENDENTE'
+            else:
+                df['Status'] = df['Status'].fillna('PENDENTE')
+
+            data.append(df)
+
+        return pd.concat(data, ignore_index=True) if data else pd.DataFrame()
+    except Exception as e:
+        print(f"Erro ao carregar dados: {e}")
+        return pd.DataFrame()  # Retorna um DataFrame vazio em caso de erro
+
+def generate_report(data):
+    """Gera um relatório agrupando por mês e nome, focando nos últimos 2 meses."""
+    if data.empty:
+        print("Não há dados para gerar o relatório.")
+        return pd.DataFrame()
+
+    # Obter os últimos dois meses disponíveis
+    unique_months = data['Mês'].unique()
+    last_two_months = unique_months[-2:] if len(unique_months) >= 2 else unique_months
+
+    # Filtrar os dados para os últimos dois meses
+    report = data[data['Mês'].isin(last_two_months)][['Nome', 'Mês', 'Valor']].copy()
+
+    # Mapeamento dos meses para garantir a ordem cronológica
+    month_order = {
+        "Janeiro": 1, "Fevereiro": 2, "Março": 3, "Abril": 4,
+        "Maio": 5, "Junho": 6, "Julho": 7, "Agosto": 8,
+        "Setembro": 9, "Outubro": 10, "Novembro": 11, "Dezembro": 12
+    }
+
+    # Adicionar uma coluna com a ordem dos meses
+    report['Número do Mês'] = report['Mês'].map(month_order)
+
+    # Ordenar o DataFrame por Número do Mês
+    report = report.sort_values('Número do Mês')
+
+    return report
+
+def generate_pending_report(data):
+    """Gera um relatório de itens pendentes apenas para o mês atual e o anterior."""
+    if data.empty:
+        print("Não há dados para gerar o relatório de pendências.")
+        return pd.DataFrame()
+
+    # Obter os últimos meses disponíveis
+    unique_months = data['Mês'].unique()
+    if len(unique_months) < 2:
+        print("Menos de dois meses disponíveis. Não é possível gerar relatório de pendências.")
+        return pd.DataFrame()
+
+    # Identifica o mês atual e o anterior
+    current_month = unique_months[-1]
+    previous_month = unique_months[-2]
+
+    # Filtra os dados para pendências do mês atual e anterior
+    pending_report = data[(data['Status'] == 'PENDENTE') & (data['Mês'].isin([current_month, previous_month]))][['Nome', 'Mês', 'Valor', 'Status']]
+    
+    if not pending_report.empty:
+        print("Relatório de Pendências:\n", pending_report)
+    else:
+        print("Não há pendências para os meses selecionados.")
+
+    return pending_report
+
+def plot_reports(report, data):
+    """Plota gráficos para o relatório e salva como PNG."""
+    if report.empty:
+        print("Não há dados para plotar.")
+        return  # Não plota se o relatório estiver vazio
+
+    # Gráfico para comparação dos últimos dois meses
+    unique_months = report['Mês'].unique()
+    last_two_months = unique_months[-2:] if len(unique_months) >= 2 else unique_months
+
+    comparison_data = report[report['Mês'].isin(last_two_months)]
+    monthly_comparison = comparison_data.groupby(['Mês'], as_index=False)['Valor'].sum()
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(monthly_comparison['Mês'], monthly_comparison['Valor'], color='lightcoral')
+    plt.xlabel('Mês')
+    plt.ylabel('Total Valor')
+    plt.title('Comparação de Valores - Últimos Dois Meses')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Salvar gráfico como PNG
+    plt.savefig('comparacao_ultimos_dois_meses.png')
+    plt.show()
+
+    # Gráfico total por mês, incluindo total de todos os meses disponíveis
+    all_monthly_totals = data.groupby('Mês', as_index=False)['Valor'].sum()
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(all_monthly_totals['Mês'], all_monthly_totals['Valor'], color='lightcoral')
+    plt.xlabel('Mês')
+    plt.ylabel('Total Valor')
+    plt.title('Total de Valores - Por Mês (Todos os Meses Disponíveis)')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Salvar gráfico como PNG
+    plt.savefig('total_por_mes_todos.png')
+    plt.show()
+
+def main():
+    # Caminho para o arquivo Excel
+    file_path = 'C:/Users/MarcosCosta/Documents/Projeto1/arcoiris2024.xlsx'  # Altere para o caminho do seu arquivo
+
+    # Carregar dados
+    data = load_data_from_sheets(file_path)
+
+    # Gerar relatório principal (últimos 2 meses)
+    report = generate_report(data)
+
+    # Exibir o relatório principal
+    print("Relatório Completo (Últimos 2 Meses):\n", report.to_string(index=False))
+
+    # Gerar e exibir o relatório de pendências
+    pending_report = generate_pending_report(data)
+
+    # Plotar os relatórios
+    plot_reports(report, data)
+
+if __name__ == "__main__":
+    main()
